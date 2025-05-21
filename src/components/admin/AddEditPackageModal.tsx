@@ -3,61 +3,55 @@ import { X } from 'lucide-react';
 import type { Tables } from '../../lib/supabase';
 import { useDestinations } from '../../hooks/useDestinations';
 import { supabase } from '../../lib/supabase';
-import { usePackages } from '../../hooks/usePackages'; // Add this import
 
 interface Props {
   package?: any;
   destinationId: string;
   onClose: () => void;
-  onSave: (data: any) => void; // <-- Add this line
+  onSave: (data: any) => Promise<void>;
 }
 
-export const AddEditPackageModal: React.FC<Props> = ({ package: pkg, destinationId: initialDestinationId, onClose, onSave }) => {
+export const AddEditPackageModal: React.FC<Props> = ({ 
+  package: pkg, 
+  destinationId: initialDestinationId, 
+  onClose, 
+  onSave 
+}) => {
   const [title, setTitle] = useState(pkg?.title || '');
   const [description, setDescription] = useState(pkg?.description || '');
   const [duration, setDuration] = useState(pkg?.duration?.toString() || '');
   const [price, setPrice] = useState(pkg?.price?.toString() || '');
   const [mainImageUrl, setMainImageUrl] = useState(pkg?.main_image_url || '');
   const [selectedDestinationId, setSelectedDestinationId] = useState(initialDestinationId || pkg?.destination_id || '');
-  const [availablePlaces, setAvailablePlaces] = useState<Tables['destination_places'][]>([]);
-  const [selectedPlaces, setSelectedPlaces] = useState<string[]>([]);
   const [itineraryDescriptions, setItineraryDescriptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const { destinations } = useDestinations();
-  const { addOrUpdatePackageWithItinerary } = usePackages();
 
-  useEffect(() => {
-    if (selectedDestinationId) {
-      fetchPlaces();
-    }
-  }, [selectedDestinationId]);
-
-  useEffect(() => {
-    // Initialize or update itinerary descriptions array when duration changes
-    const days = parseInt(duration) || 0;
-    setItineraryDescriptions(prev => {
-      const newDescriptions = [...prev];
-      if (days > prev.length) {
-        // Add empty descriptions for new days
-        for (let i = prev.length; i < days; i++) {
-          newDescriptions.push('');
-        }
-      } else if (days < prev.length) {
-        // Remove descriptions for removed days
-        newDescriptions.splice(days);
-      }
-      return newDescriptions;
-    });
-  }, [duration]);
-
-  // Fetch existing itinerary if editing
   useEffect(() => {
     if (pkg?.id) {
       fetchExistingItinerary();
     }
   }, [pkg?.id]);
+
+  useEffect(() => {
+    const days = parseInt(duration) || 0;
+    if (days > 0) {
+      setItineraryDescriptions(prev => {
+        const newDescriptions = [...prev];
+        // Keep existing descriptions if available
+        while (newDescriptions.length < days) {
+          newDescriptions.push('');
+        }
+        // Remove extra descriptions if duration is reduced
+        if (newDescriptions.length > days) {
+          newDescriptions.length = days;
+        }
+        return newDescriptions;
+      });
+    }
+  }, [duration]);
 
   const fetchExistingItinerary = async () => {
     if (!pkg?.id) return;
@@ -67,13 +61,13 @@ export const AddEditPackageModal: React.FC<Props> = ({ package: pkg, destination
         .from('package_itinerary')
         .select('*')
         .eq('package_id', pkg.id)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('Error fetching itinerary:', error);
         return;
       }
-      
+
       if (data) {
         setItineraryDescriptions(data.description || []);
       }
@@ -82,67 +76,44 @@ export const AddEditPackageModal: React.FC<Props> = ({ package: pkg, destination
     }
   };
 
-  const fetchPlaces = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('destination_places')
-        .select('*')
-        .eq('destination_id', selectedDestinationId);
-
-      if (error) throw error;
-      setAvailablePlaces(data || []);
-    } catch (err) {
-      console.error('Error fetching places:', err);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    if (!selectedDestinationId) {
-      setError('Please select a destination');
-      setLoading(false);
-      return;
-    }
-
-    if (itineraryDescriptions.some(desc => !desc.trim())) {
-      setError('Please fill in all itinerary descriptions');
-      setLoading(false);
-      return;
-    }
-
     try {
-      // Collect all your form data into an object, e.g.:
+      // Validate required fields
+      if (!title.trim() || !description.trim() || !duration || !price || !mainImageUrl.trim()) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      // Validate itinerary descriptions
+      if (itineraryDescriptions.some(desc => !desc.trim())) {
+        throw new Error('Please fill in all itinerary descriptions');
+      }
+
       const packageData = {
         ...(pkg?.id ? { id: pkg.id } : {}),
         destination_id: selectedDestinationId,
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         duration: parseInt(duration),
         price: parseFloat(price),
-        rating: pkg?.rating || 0,
-        main_image_url: mainImageUrl,
-        itinerary: itineraryDescriptions,
-        places: selectedPlaces,
+        main_image_url: mainImageUrl.trim(),
+        rating: pkg?.rating || 0
       };
-      await onSave(packageData); // <-- Call the prop
+
+      await onSave({
+        ...packageData,
+        itineraryDescriptions: itineraryDescriptions.map(desc => desc.trim())
+      });
 
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'An error occurred while saving');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handlePlaceToggle = (placeId: string) => {
-    setSelectedPlaces(prev => 
-      prev.includes(placeId)
-        ? prev.filter(id => id !== placeId)
-        : [...prev, placeId]
-    );
   };
 
   const handleItineraryChange = (index: number, value: string) => {
@@ -282,10 +253,6 @@ export const AddEditPackageModal: React.FC<Props> = ({ package: pkg, destination
                 </div>
               ))}
             </div>
-          </div>
-
-          <div>
-            
           </div>
 
           <div className="flex justify-end space-x-3">
