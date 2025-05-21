@@ -81,9 +81,9 @@ export function usePackages(destinationId?: string) {
     }
   };
 
-  const addOrUpdateItinerary = async (packageId: string, itineraryData: Omit<Tables['package_itinerary'], 'id' | 'created_at' | 'updated_at'>) => {
+  const addOrUpdateItinerary = async (packageId: string, itineraryData: { no_of_days: number, description: string[] }) => {
     try {
-      // Check if itinerary exists
+      // First check if an itinerary exists
       const { data: existingData } = await supabase
         .from('package_itinerary')
         .select('id')
@@ -94,7 +94,10 @@ export function usePackages(destinationId?: string) {
         // Update existing itinerary
         const { error } = await supabase
           .from('package_itinerary')
-          .update(itineraryData)
+          .update({
+            no_of_days: itineraryData.no_of_days,
+            description: itineraryData.description
+          })
           .eq('package_id', packageId);
 
         if (error) throw error;
@@ -102,7 +105,11 @@ export function usePackages(destinationId?: string) {
         // Create new itinerary
         const { error } = await supabase
           .from('package_itinerary')
-          .insert([itineraryData]);
+          .insert([{
+            package_id: packageId,
+            no_of_days: itineraryData.no_of_days,
+            description: itineraryData.description
+          }]);
 
         if (error) throw error;
       }
@@ -128,31 +135,32 @@ export function usePackages(destinationId?: string) {
     }
   };
 
-  /**
-   * Add or update a package and its itinerary in one call.
-   * If pkg has an id, it updates; otherwise, it creates a new package.
-   * itineraryData should include no_of_days and description (text[]).
-   */
   const addOrUpdatePackageWithItinerary = async (
-    pkg: Omit<Tables['packages'], 'id' | 'created_at' | 'updated_at'> & Partial<Pick<Tables['packages'], 'id'>>,
-    itineraryData: Omit<Tables['package_itinerary'], 'id' | 'created_at' | 'updated_at' | 'package_id'>
+    pkg: Omit<Tables['packages'], 'id' | 'created_at' | 'updated_at'> & { id?: string },
+    itineraryDescriptions: string[]
   ) => {
-    let savedPackage: Tables['packages'];
-    if (pkg.id) {
-      // Update package
-      savedPackage = await updatePackage(pkg.id, pkg);
-    } else {
-      // Add package
-      savedPackage = await addPackage(pkg);
+    try {
+      let savedPackage: Tables['packages'];
+      
+      if (pkg.id) {
+        // Update existing package
+        savedPackage = await updatePackage(pkg.id, pkg);
+      } else {
+        // Add new package
+        savedPackage = await addPackage(pkg);
+      }
+
+      // Save itinerary
+      await addOrUpdateItinerary(savedPackage.id, {
+        no_of_days: pkg.duration,
+        description: itineraryDescriptions
+      });
+
+      return savedPackage;
+    } catch (err) {
+      console.error('Error saving package with itinerary:', err);
+      throw err;
     }
-
-    // Save itinerary
-    await addOrUpdateItinerary(savedPackage.id, {
-      package_id: savedPackage.id,
-      ...itineraryData,
-    });
-
-    return savedPackage;
   };
 
   useEffect(() => {
@@ -171,4 +179,4 @@ export function usePackages(destinationId?: string) {
     addOrUpdatePackageWithItinerary,
     refetch: fetchPackages
   };
-};
+}
