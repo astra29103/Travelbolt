@@ -50,6 +50,8 @@ export const AddEditPackageModal: React.FC<Props> = ({
         }
         return newDescriptions;
       });
+    } else {
+      setItineraryDescriptions([]);
     }
   }, [duration]);
 
@@ -83,11 +85,35 @@ export const AddEditPackageModal: React.FC<Props> = ({
 
     try {
       // Validate required fields
-      if (!title.trim() || !description.trim() || !duration || !price || !mainImageUrl.trim()) {
-        throw new Error('Please fill in all required fields');
+      if (!selectedDestinationId) {
+        throw new Error('Please select a destination');
+      }
+
+      if (!title.trim()) {
+        throw new Error('Title is required');
+      }
+
+      if (!description.trim()) {
+        throw new Error('Description is required');
+      }
+
+      if (!duration || parseInt(duration) <= 0) {
+        throw new Error('Valid duration is required');
+      }
+
+      if (!price || parseFloat(price) <= 0) {
+        throw new Error('Valid price is required');
+      }
+
+      if (!mainImageUrl.trim()) {
+        throw new Error('Main image URL is required');
       }
 
       // Validate itinerary descriptions
+      if (itineraryDescriptions.length === 0) {
+        throw new Error('At least one itinerary day is required');
+      }
+
       if (itineraryDescriptions.some(desc => !desc.trim())) {
         throw new Error('Please fill in all itinerary descriptions');
       }

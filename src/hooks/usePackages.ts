@@ -81,7 +81,7 @@ export function usePackages(destinationId?: string) {
     }
   };
 
-  const addOrUpdateItinerary = async (packageId: string, itineraryData: { no_of_days: number, description: string[] }) => {
+  const addOrUpdateItinerary = async (packageId: string, itineraryData: { description: string[] }) => {
     try {
       // First check if an itinerary exists
       const { data: existingData } = await supabase
@@ -95,7 +95,6 @@ export function usePackages(destinationId?: string) {
         const { error } = await supabase
           .from('package_itinerary')
           .update({
-            no_of_days: itineraryData.no_of_days,
             description: itineraryData.description
           })
           .eq('package_id', packageId);
@@ -107,7 +106,7 @@ export function usePackages(destinationId?: string) {
           .from('package_itinerary')
           .insert([{
             package_id: packageId,
-            no_of_days: itineraryData.no_of_days,
+            no_of_days: itineraryData.description.length,
             description: itineraryData.description
           }]);
 
@@ -140,6 +139,15 @@ export function usePackages(destinationId?: string) {
     itineraryDescriptions: string[]
   ) => {
     try {
+      // Validate itinerary descriptions
+      if (!itineraryDescriptions || itineraryDescriptions.length === 0) {
+        throw new Error('Itinerary descriptions are required');
+      }
+
+      if (itineraryDescriptions.some(desc => !desc.trim())) {
+        throw new Error('All itinerary descriptions must be filled out');
+      }
+
       let savedPackage: Tables['packages'];
       
       if (pkg.id) {
@@ -152,7 +160,6 @@ export function usePackages(destinationId?: string) {
 
       // Save itinerary
       await addOrUpdateItinerary(savedPackage.id, {
-        no_of_days: pkg.duration,
         description: itineraryDescriptions
       });
 
